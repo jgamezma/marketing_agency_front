@@ -1,0 +1,33 @@
+name: Branch Naming Convention
+
+on:
+  push:
+    branches-ignore:
+      - main
+      - develop
+  pull_request:
+
+jobs:
+  check-branch-name:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate Branch Name
+        run: |
+          # Use head_ref for PRs, ref_name for pushes
+          BRANCH_NAME="${{ github.head_ref || github.ref_name }}"
+          echo "Checking branch name: $BRANCH_NAME"
+          
+          # Allow dependabot branches
+          if [[ "$BRANCH_NAME" == dependabot/* ]]; then
+            echo "Dependabot branch allowed."
+            exit 0
+          fi
+          
+          # Validate branch format based on GitFlow agent workflows
+          if [[ "$BRANCH_NAME" =~ ^(feature|bugfix|hotfix|release)/[A-Za-z0-9_-]+$ ]]; then
+            echo "Branch name is valid."
+            exit 0
+          else
+            echo "Error: Branch name must start with 'feature/', 'bugfix/', 'hotfix/', or 'release/' followed by alphanumeric characters, dashes, or underscores."
+            exit 1
+          fi

@@ -1,0 +1,19 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Run Tests (Placeholder)
+        run: |
+          echo "Replace this step with specific application test commands (e.g., npm run test, mvn test, etc.)"
+          echo "This ensures PRs to main/develop don't break the build."

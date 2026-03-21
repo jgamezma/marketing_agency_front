@@ -1,0 +1,29 @@
+name: README Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  validate-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Check for README.md and Tech Stack
+        run: |
+          if [ ! -f "README.md" ]; then
+            echo "::error::README.md is missing from the repository root."
+            exit 1
+          fi
+          
+          if ! grep -qiE "stack|technologies|architecture|built with|technical definition" README.md; then
+            echo "::error::README.md must contain a technical stack definition."
+            echo "::error::Please include a section titled 'Technical Stack', 'Technologies', or similar."
+            exit 1
+          fi
+          
+          echo "README.md validation passed."

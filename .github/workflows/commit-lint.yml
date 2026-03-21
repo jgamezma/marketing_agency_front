@@ -1,0 +1,28 @@
+name: Commit Lint
+
+on:
+  pull_request:
+    types: ['opened', 'edited', 'reopened', 'synchronize']
+
+jobs:
+  lint-commits:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          
+      - name: Install Commitlint
+        run: npm install -g @commitlint/cli @commitlint/config-conventional
+        
+      - name: Create Commitlint Config
+        run: echo "module.exports = {extends: ['@commitlint/config-conventional']}" > commitlint.config.cjs
+        
+      - name: Lint Commits
+        run: npx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose

@@ -1,0 +1,3 @@
+[submodule ".ai-system"]
+	path = .ai-system
+	url = git@github.com-personal:jgamezma/workforce_TI_software_development.git

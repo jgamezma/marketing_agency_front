@@ -1,0 +1,25 @@
+# CODEOWNERS
+# Enforces code review assignment based on agent roles / paths.
+#
+# IMPORTANT: Replace @your-org with your actual GitHub organization or team handles.
+# Uncomment and adjust paths below to match your parent project's actual structure.
+
+# Default owners for all files (Lead Developer / Core Devs)
+# *                   @your-org/lead-devs
+
+# Architecture and design docs (Architect)
+# /docs/architecture/   @your-org/architects
+# /docs/specs/          @your-org/architects
+# /docs/memory_bank/    @your-org/architects
+
+# Workflows and CI/CD Pipelines (DevOps / SRE)
+# /.github/workflows/   @your-org/devops
+
+# Security critical configurations (Security Agent)
+# /.github/CODEOWNERS   @your-org/security
+
+# UI/UX components (Frontend / UX Agent)
+# /src/components/      @your-org/frontend-team
+
+# Database Migrations (DBA)
+# /src/db/migrations/   @your-org/dba
