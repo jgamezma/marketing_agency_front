@@ -6,10 +6,12 @@ import { createClient } from "@/lib/supabase";
 import {
   getProject,
   getSquadTypes,
+  getTasks,
   activateSquads,
   getProjectId,
   type ProjectResponse,
   type SquadTypeResponse,
+  type TaskResponse,
 } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,14 +22,16 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { CreateTaskDialog } from "@/components/tasks/CreateTaskDialog";
 import { cn } from "@/lib/utils";
-import { Check, Pencil, Users } from "lucide-react";
+import { Check, ClipboardList, Pencil, Users } from "lucide-react";
 import Link from "next/link";
 
 export default function ProjectDetailPage() {
   const params = useParams<{ project_id: string }>();
   const [project, setProject] = useState<ProjectResponse | null>(null);
   const [squadTypes, setSquadTypes] = useState<SquadTypeResponse[]>([]);
+  const [tasks, setTasks] = useState<TaskResponse[]>([]);
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -48,12 +52,14 @@ export default function ProjectDetailPage() {
       const companyId = cid;
 
       try {
-        const [projectData, types] = await Promise.all([
+        const [projectData, types, tasksData] = await Promise.all([
           getProject(companyId, params.project_id),
           getSquadTypes(companyId).catch(() => [] as SquadTypeResponse[]),
+          getTasks(companyId, params.project_id).catch(() => [] as TaskResponse[]),
         ]);
         setProject(projectData);
         setSquadTypes(types);
+        setTasks(tasksData);
       } catch (err) {
         setError(
           err instanceof Error ? err.message : "Failed to load project"
@@ -168,6 +174,58 @@ export default function ProjectDetailPage() {
               ))}
             </div>
           </CardContent>
+        </Card>
+      )}
+
+      {/* Tasks */}
+      {hasSquads && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <ClipboardList className="size-5" />
+                Tasks
+              </CardTitle>
+              <CardDescription>
+                {tasks.length === 0
+                  ? "No tasks yet. Create one to get started."
+                  : `${tasks.length} task${tasks.length !== 1 ? "s" : ""} in this project`}
+              </CardDescription>
+            </div>
+            <CreateTaskDialog
+              companyId={companyId!}
+              projectId={getProjectId(project)}
+              squads={project.associated_squads!}
+              onTaskCreated={(task) => setTasks((prev) => [task, ...prev])}
+            />
+          </CardHeader>
+          {tasks.length > 0 && (
+            <CardContent>
+              <div className="divide-y">
+                {tasks.map((task) => (
+                  <div
+                    key={task.id}
+                    className="flex items-center justify-between py-3 first:pt-0 last:pb-0"
+                  >
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-medium">{task.title}</p>
+                      {task.description && (
+                        <p className="text-xs text-muted-foreground line-clamp-1">
+                          {task.description}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {task.squad_name && (
+                        <Badge variant="secondary">{task.squad_name}</Badge>
+                      )}
+                      <Badge variant="outline">{task.status}</Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          )}
         </Card>
       )}
 

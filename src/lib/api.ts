@@ -280,6 +280,186 @@ export function createCompanyContext(
   );
 }
 
+// ── Task types ──
+
+export interface TaskCreate {
+  title: string;
+  description?: string;
+  squad_id?: string;
+}
+
+export interface TaskResponse {
+  id: string;
+  project_id: string;
+  title: string;
+  description: string | null;
+  squad_id: string | null;
+  squad_name: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SuggestSquadResponse {
+  suggested_squad_id: string;
+  squad_name: string;
+  confidence_score: number;
+  reasoning: string;
+}
+
+// ── Task endpoints ──
+
+export function getTasks(companyId: string, projectId: string) {
+  return api.get<TaskResponse[]>(
+    `/api/v1/companies/${companyId}/projects/${projectId}/tasks`
+  );
+}
+
+export function createTask(
+  companyId: string,
+  projectId: string,
+  data: TaskCreate
+) {
+  return api.post<TaskResponse>(
+    `/api/v1/companies/${companyId}/projects/${projectId}/tasks`,
+    data
+  );
+}
+
+export function suggestSquad(
+  companyId: string,
+  projectId: string,
+  data: { title: string; description?: string }
+) {
+  return api.post<SuggestSquadResponse>(
+    `/api/v1/companies/${companyId}/projects/${projectId}/tasks/suggest-squad`,
+    data
+  );
+}
+
+// ── Task execution types ──
+
+export interface ExecutionStep {
+  id: string;
+  task_id: string;
+  agent_name: string;
+  step_order: number;
+  status: string;
+  input_summary: string | null;
+  output_text: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string | null;
+}
+
+export interface ExecutionStatusResponse {
+  task_id: string;
+  task_status: string;
+  steps: ExecutionStep[];
+}
+
+export interface TaskResultResponse {
+  task_id: string;
+  status: string;
+  result_markdown: string | null;
+  result_assets: Record<string, unknown>[] | null;
+  completed_at: string | null;
+}
+
+// ── Task execution endpoints ──
+
+export function executeTask(
+  companyId: string,
+  projectId: string,
+  taskId: string
+) {
+  return api.post<ExecutionStatusResponse>(
+    `/api/v1/companies/${companyId}/projects/${projectId}/tasks/${taskId}/execute`
+  );
+}
+
+export function getExecutionStatus(
+  companyId: string,
+  projectId: string,
+  taskId: string
+) {
+  return api.get<ExecutionStatusResponse>(
+    `/api/v1/companies/${companyId}/projects/${projectId}/tasks/${taskId}/execution`
+  );
+}
+
+export function getTaskResult(
+  companyId: string,
+  projectId: string,
+  taskId: string
+) {
+  return api.get<TaskResultResponse>(
+    `/api/v1/companies/${companyId}/projects/${projectId}/tasks/${taskId}/result`
+  );
+}
+
+// ── Task feedback & versions ──
+
+export interface FeedbackEntry {
+  id: string;
+  task_id: string;
+  feedback: string;
+  created_at: string;
+  created_by: string;
+}
+
+export interface TaskVersion {
+  version_number: number;
+  task_id: string;
+  status: string;
+  result_markdown: string | null;
+  result_assets: Record<string, unknown>[] | null;
+  created_at: string;
+}
+
+export function submitFeedback(
+  companyId: string,
+  projectId: string,
+  taskId: string,
+  data: { feedback_text: string }
+) {
+  return api.post<FeedbackEntry>(
+    `/api/v1/companies/${companyId}/projects/${projectId}/tasks/${taskId}/feedback`,
+    data
+  );
+}
+
+export function listFeedback(
+  companyId: string,
+  projectId: string,
+  taskId: string
+) {
+  return api.get<FeedbackEntry[]>(
+    `/api/v1/companies/${companyId}/projects/${projectId}/tasks/${taskId}/feedback`
+  );
+}
+
+export function listVersions(
+  companyId: string,
+  projectId: string,
+  taskId: string
+) {
+  return api.get<TaskVersion[]>(
+    `/api/v1/companies/${companyId}/projects/${projectId}/tasks/${taskId}/versions`
+  );
+}
+
+export function getVersion(
+  companyId: string,
+  projectId: string,
+  taskId: string,
+  versionNumber: number
+) {
+  return api.get<TaskVersion>(
+    `/api/v1/companies/${companyId}/projects/${projectId}/tasks/${taskId}/versions/${versionNumber}`
+  );
+}
+
 // ── Plan endpoints ──
 export function getPlans() {
   return api.get<PlanResponse[]>("/api/v1/plans");
