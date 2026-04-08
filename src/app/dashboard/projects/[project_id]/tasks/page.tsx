@@ -8,6 +8,8 @@ import {
   getProject,
   getTasks,
   executeTask,
+  cancelTask,
+  restartTask,
   getProjectId,
   type ProjectResponse,
   type TaskResponse,
@@ -27,13 +29,18 @@ import {
   Play,
   Loader2,
   ArrowRight,
+  Ban,
+  RotateCcw,
 } from "lucide-react";
 
 const statusVariant: Record<string, "default" | "secondary" | "outline" | "destructive"> = {
   completed: "default",
   in_progress: "secondary",
+  in_revision: "secondary",
+  awaiting_approval: "secondary",
   failed: "destructive",
   pending: "outline",
+  cancelled: "destructive",
 };
 
 export default function TasksPage() {
@@ -43,6 +50,7 @@ export default function TasksPage() {
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [executingId, setExecutingId] = useState<string | null>(null);
+  const [taskError, setTaskError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -58,7 +66,10 @@ export default function TasksPage() {
       try {
         const [projectData, tasksData] = await Promise.all([
           getProject(cid, params.project_id),
-          getTasks(cid, params.project_id).catch(() => [] as TaskResponse[]),
+          getTasks(cid, params.project_id).catch((err) => {
+            setTaskError(err instanceof Error ? err.message : "Failed to load tasks");
+            return [] as TaskResponse[];
+          }),
         ]);
         setProject(projectData);
         setTasks(tasksData);
@@ -72,6 +83,8 @@ export default function TasksPage() {
     load();
   }, [params.project_id]);
 
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+
   const handleExecute = async (taskId: string) => {
     if (!companyId) return;
     setExecutingId(taskId);
@@ -79,6 +92,36 @@ export default function TasksPage() {
       await executeTask(companyId, params.project_id, taskId);
       setTasks((prev) =>
         prev.map((t) => (t.id === taskId ? { ...t, status: "in_progress" } : t))
+      );
+    } catch {
+      // keep current state
+    } finally {
+      setExecutingId(null);
+    }
+  };
+
+  const handleCancel = async (taskId: string) => {
+    if (!companyId) return;
+    setCancellingId(taskId);
+    try {
+      await cancelTask(companyId, params.project_id, taskId);
+      setTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, status: "cancelled" } : t))
+      );
+    } catch {
+      // keep current state
+    } finally {
+      setCancellingId(null);
+    }
+  };
+
+  const handleRestart = async (taskId: string) => {
+    if (!companyId) return;
+    setExecutingId(taskId);
+    try {
+      await restartTask(companyId, params.project_id, taskId);
+      setTasks((prev) =>
+        prev.map((t) => (t.id === taskId ? { ...t, status: "pending" } : t))
       );
     } catch {
       // keep current state
@@ -120,14 +163,16 @@ export default function TasksPage() {
       </div>
 
       {tasks.length === 0 ? (
-        <Card className="border-dashed">
+        <Card className={taskError ? "border-destructive" : "border-dashed"}>
           <CardHeader className="items-center text-center">
             <ClipboardList className="size-10 text-muted-foreground" />
-            <CardTitle>No tasks yet</CardTitle>
+            <CardTitle>{taskError ? "Failed to load tasks" : "No tasks yet"}</CardTitle>
             <CardDescription>
-              {squads.length > 0
-                ? "Create your first task to get started."
-                : "Activate squads on the Overview tab before creating tasks."}
+              {taskError
+                ? taskError
+                : squads.length > 0
+                  ? "Create your first task to get started."
+                  : "Activate squads on the Overview tab before creating tasks."}
             </CardDescription>
           </CardHeader>
         </Card>
@@ -145,8 +190,8 @@ export default function TasksPage() {
                   )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0 ml-4">
-                  {task.squad_name && (
-                    <Badge variant="secondary">{task.squad_name}</Badge>
+                  {task.squad?.name && (
+                    <Badge variant="secondary">{task.squad.name}</Badge>
                   )}
                   <Badge variant={statusVariant[task.status] ?? "outline"}>
                     {task.status}
@@ -166,7 +211,37 @@ export default function TasksPage() {
                       Execute
                     </Button>
                   )}
-                  {(task.status === "in_progress" || task.status === "completed" || task.status === "failed") && (
+                  {(task.status === "pending" || task.status === "in_progress" || task.status === "awaiting_approval" || task.status === "in_revision") && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleCancel(task.id)}
+                      disabled={cancellingId === task.id}
+                    >
+                      {cancellingId === task.id ? (
+                        <Loader2 className="mr-1 size-3.5 animate-spin" />
+                      ) : (
+                        <Ban className="mr-1 size-3.5" />
+                      )}
+                      Cancel
+                    </Button>
+                  )}
+                  {task.status === "cancelled" && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleRestart(task.id)}
+                      disabled={executingId === task.id}
+                    >
+                      {executingId === task.id ? (
+                        <Loader2 className="mr-1 size-3.5 animate-spin" />
+                      ) : (
+                        <RotateCcw className="mr-1 size-3.5" />
+                      )}
+                      Restart
+                    </Button>
+                  )}
+                  {(task.status === "in_progress" || task.status === "completed" || task.status === "failed" || task.status === "cancelled") && (
                     <Link href={`/dashboard/projects/${projectId}/tasks/${task.id}`}>
                       <Button size="sm" variant="outline">
                         View

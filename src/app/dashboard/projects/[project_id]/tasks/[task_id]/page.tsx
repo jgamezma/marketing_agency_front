@@ -8,6 +8,8 @@ import {
   getExecutionStatus,
   getTaskResult,
   executeTask,
+  cancelTask,
+  restartTask,
   submitFeedback,
   listFeedback,
   listVersions,
@@ -17,7 +19,10 @@ import {
   type TaskResultResponse,
   type FeedbackEntry,
   type TaskVersion,
+  type ResultAsset,
 } from "@/lib/api";
+import { ResultViewer } from "@/components/tasks/ResultViewer";
+import { ScenePlanReview } from "@/components/tasks/ScenePlanReview";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -38,11 +43,13 @@ import {
 } from "@/components/ui/select";
 import {
   ArrowLeft,
+  Ban,
   CheckCircle2,
   Circle,
   Loader2,
   MessageSquarePlus,
   Play,
+  RotateCcw,
   Send,
   XCircle,
   History,
@@ -66,8 +73,10 @@ const executionStatusVariant: Record<string, "default" | "secondary" | "outline"
   completed: "default",
   done: "default",
   in_progress: "secondary",
+  awaiting_approval: "secondary",
   failed: "destructive",
   pending: "outline",
+  cancelled: "destructive",
 };
 
 export default function TaskWorkflowPage() {
@@ -93,11 +102,16 @@ export default function TaskWorkflowPage() {
   const isTerminal =
     execution?.task_status === "completed" ||
     execution?.task_status === "failed" ||
-    execution?.task_status === "done";
+    execution?.task_status === "done" ||
+    execution?.task_status === "awaiting_approval" ||
+    execution?.task_status === "cancelled";
 
   const isCompleted =
     execution?.task_status === "completed" ||
     execution?.task_status === "done";
+
+  const isAwaitingApproval =
+    execution?.task_status === "awaiting_approval";
 
   // Fetch execution status
   const fetchStatus = useCallback(
@@ -160,6 +174,7 @@ export default function TaskWorkflowPage() {
         await fetchResult(cid);
         await fetchFeedbackAndVersions(cid);
       }
+      // awaiting_approval is also terminal for polling, but result isn't fetched
       setLoading(false);
     }
 
@@ -172,14 +187,13 @@ export default function TaskWorkflowPage() {
 
     pollingRef.current = setInterval(async () => {
       const status = await fetchStatus(companyId);
-      if (
-        status?.task_status === "completed" ||
-        status?.task_status === "failed" ||
-        status?.task_status === "done"
-      ) {
+      const s = status?.task_status;
+      if (s === "completed" || s === "failed" || s === "done" || s === "awaiting_approval") {
         if (pollingRef.current) clearInterval(pollingRef.current);
-        await fetchResult(companyId);
-        await fetchFeedbackAndVersions(companyId);
+        if (s === "completed" || s === "failed" || s === "done") {
+          await fetchResult(companyId);
+          await fetchFeedbackAndVersions(companyId);
+        }
       }
     }, POLL_INTERVAL);
 
@@ -197,6 +211,40 @@ export default function TaskWorkflowPage() {
       setExecution(status);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start execution");
+    } finally {
+      setExecuting(false);
+    }
+  };
+
+  const [cancelling, setCancelling] = useState(false);
+
+  const handleCancel = async () => {
+    if (!companyId) return;
+    setCancelling(true);
+    setError(null);
+    try {
+      await cancelTask(companyId, params.project_id, params.task_id);
+      if (pollingRef.current) clearInterval(pollingRef.current);
+      setExecution((prev) => prev ? { ...prev, task_status: "cancelled" } : prev);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to cancel task");
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  const handleRestart = async () => {
+    if (!companyId) return;
+    setExecuting(true);
+    setError(null);
+    try {
+      await restartTask(companyId, params.project_id, params.task_id);
+      setExecution((prev) => prev ? { ...prev, task_status: "pending", steps: [] } : prev);
+      setResult(null);
+      setVersionResult(null);
+      setSelectedVersion("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to restart task");
     } finally {
       setExecuting(false);
     }
@@ -224,8 +272,8 @@ export default function TaskWorkflowPage() {
     }
   };
 
-  const handleVersionChange = async (versionNumber: string) => {
-    if (!companyId) return;
+  const handleVersionChange = async (versionNumber: string | null) => {
+    if (!companyId || !versionNumber) return;
     setSelectedVersion(versionNumber);
     if (versionNumber === "latest") {
       setVersionResult(null);
@@ -242,6 +290,19 @@ export default function TaskWorkflowPage() {
     } catch {
       setVersionResult(null);
     }
+  };
+
+  // After scene plan approval, resume polling for rendering progress
+  const handleScenePlanApproved = async () => {
+    if (!companyId) return;
+    await fetchStatus(companyId);
+    // Execution resumes — polling will restart via the useEffect since isTerminal will be false
+  };
+
+  // After scene plan rejection, the backend regenerates — poll until awaiting_approval again
+  const handleScenePlanRejected = async () => {
+    if (!companyId) return;
+    await fetchStatus(companyId);
   };
 
   if (loading) {
@@ -275,6 +336,21 @@ export default function TaskWorkflowPage() {
             Track execution progress and view results
           </p>
         </div>
+        {execution && (execution.task_status === "pending" || execution.task_status === "in_progress" || execution.task_status === "awaiting_approval" || execution.task_status === "in_revision") && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleCancel}
+            disabled={cancelling}
+          >
+            {cancelling ? (
+              <Loader2 className="mr-1 size-3.5 animate-spin" />
+            ) : (
+              <Ban className="mr-1 size-3.5" />
+            )}
+            Cancel
+          </Button>
+        )}
         {execution && (
           <Badge variant={executionStatusVariant[execution.task_status] ?? "outline"}>
             {execution.task_status}
@@ -282,15 +358,39 @@ export default function TaskWorkflowPage() {
         )}
       </div>
 
-      {/* Not started state */}
-      {!execution && (
+      {/* Cancelled state */}
+      {execution?.task_status === "cancelled" && (
+        <Card className="border-dashed">
+          <CardHeader className="items-center text-center">
+            <Ban className="size-10 text-muted-foreground" />
+            <CardTitle>Task Cancelled</CardTitle>
+            <CardDescription>
+              This task was cancelled. Restart it to reset and execute again from scratch.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center">
+            <Button onClick={handleRestart} disabled={executing}>
+              {executing ? (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              ) : (
+                <RotateCcw className="mr-2 size-4" />
+              )}
+              {executing ? "Restarting..." : "Restart Task"}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Not started / pending state */}
+      {(!execution || execution.task_status === "pending") && (
         <Card className="border-dashed">
           <CardHeader className="items-center text-center">
             <Play className="size-10 text-muted-foreground" />
             <CardTitle>Ready to Execute</CardTitle>
             <CardDescription>
-              This task has not been executed yet. Start execution to begin
-              processing with the assigned squad.
+              {execution
+                ? "This task has been reset. Start execution to begin processing."
+                : "This task has not been executed yet. Start execution to begin processing with the assigned squad."}
             </CardDescription>
           </CardHeader>
           <CardContent className="flex justify-center">
@@ -324,7 +424,9 @@ export default function TaskWorkflowPage() {
                   ? "All steps completed successfully"
                   : execution.task_status === "failed"
                     ? "Execution encountered an error"
-                    : `Status: ${execution.task_status}`}
+                    : execution.task_status === "awaiting_approval"
+                      ? "Scene plan ready for your review"
+                      : `Status: ${execution.task_status}`}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -382,6 +484,17 @@ export default function TaskWorkflowPage() {
         </Card>
       )}
 
+      {/* Scene plan review — awaiting approval */}
+      {isAwaitingApproval && companyId && (
+        <ScenePlanReview
+          companyId={companyId}
+          projectId={params.project_id}
+          taskId={params.task_id}
+          onApproved={handleScenePlanApproved}
+          onRejected={handleScenePlanRejected}
+        />
+      )}
+
       {/* Version selector */}
       {versions.length > 1 && (
         <Card>
@@ -433,29 +546,11 @@ export default function TaskWorkflowPage() {
                 </CardDescription>
               )}
             </CardHeader>
-            <CardContent className="space-y-4">
-              {displayResult.result_markdown && (
-                <div className="rounded-lg bg-muted p-4">
-                  <p className="text-sm whitespace-pre-wrap">{displayResult.result_markdown}</p>
-                </div>
-              )}
-              {displayResult.result_assets && displayResult.result_assets.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">Assets</p>
-                  <div className="space-y-2">
-                    {displayResult.result_assets.map((asset, i) => (
-                      <div
-                        key={i}
-                        className="rounded-lg ring-1 ring-foreground/10 p-3"
-                      >
-                        <pre className="text-xs overflow-x-auto">
-                          {JSON.stringify(asset, null, 2)}
-                        </pre>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+            <CardContent>
+              <ResultViewer
+                resultMarkdown={displayResult.result_markdown}
+                resultAssets={displayResult.result_assets}
+              />
             </CardContent>
           </Card>
         </>

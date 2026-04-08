@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000";
+const API_BASE_URL = "";
 
 type RequestOptions = Omit<RequestInit, "headers"> & {
   headers?: Record<string, string>;
@@ -33,12 +33,21 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: response.statusText }));
     const detail = error.detail;
-    const message =
-      typeof detail === "string"
-        ? detail
-        : detail != null
-          ? JSON.stringify(detail)
-          : `Request failed: ${response.status}`;
+    let message: string;
+
+    if (typeof detail === "string") {
+      message = detail;
+    } else if (Array.isArray(detail)) {
+      // FastAPI 422 validation error structure
+      message = detail
+        .map((entry: { msg?: string }) => entry.msg ?? JSON.stringify(entry))
+        .join("; ");
+    } else if (detail != null) {
+      message = JSON.stringify(detail);
+    } else {
+      message = `Request failed: ${response.status}`;
+    }
+
     throw new Error(message);
   }
 
@@ -280,12 +289,66 @@ export function createCompanyContext(
   );
 }
 
+// ── Model Preferences types ──
+
+export interface ModelPreferenceResponse {
+  id: string;
+  company_id: string;
+  result_type: string;
+  ai_model: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ModelPreferenceRequest {
+  result_type: string;
+  ai_model: string;
+}
+
+export async function getModelPreferences(companyId: string): Promise<ModelPreferenceResponse[]> {
+  const res = await api.get<{ status: string; data: ModelPreferenceResponse[] }>(
+    `/api/v1/companies/${companyId}/model-preferences`
+  );
+  return res.data;
+}
+
+export function setModelPreference(companyId: string, data: ModelPreferenceRequest) {
+  return api.post<ModelPreferenceResponse>(
+    `/api/v1/companies/${companyId}/model-preferences`,
+    data
+  );
+}
+
+export function deleteModelPreference(companyId: string, preferenceId: string) {
+  return api.delete<void>(
+    `/api/v1/companies/${companyId}/model-preferences/${preferenceId}`
+  );
+}
+
 // ── Task types ──
+
+export type TaskOutputFormat =
+  | "pdf"
+  | "image"
+  | "image_pipeline"
+  | "video"
+  | "video_pipeline";
+
+export function toResultType(format: TaskOutputFormat): string {
+  return format;
+}
 
 export interface TaskCreate {
   title: string;
   description?: string;
   squad_id?: string;
+  result_type?: string;
+}
+
+export interface TaskSquadInfo {
+  id: string;
+  key: string;
+  name: string;
 }
 
 export interface TaskResponse {
@@ -293,9 +356,17 @@ export interface TaskResponse {
   project_id: string;
   title: string;
   description: string | null;
-  squad_id: string | null;
-  squad_name: string | null;
   status: string;
+  squad_id: string | null;
+  squad: TaskSquadInfo | null;
+  result_type: string;
+  media_source_preference: string;
+  result_markdown: string | null;
+  result_assets: Record<string, unknown>[];
+  current_version: number;
+  scene_plan: Record<string, unknown> | null;
+  execution_phase: number;
+  created_by: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -358,11 +429,18 @@ export interface ExecutionStatusResponse {
   steps: ExecutionStep[];
 }
 
+export interface ResultAsset {
+  type: "markdown" | "pdf" | "video" | "image" | string;
+  url?: string;
+  content?: string;
+  name?: string;
+}
+
 export interface TaskResultResponse {
   task_id: string;
   status: string;
   result_markdown: string | null;
-  result_assets: Record<string, unknown>[] | null;
+  result_assets: ResultAsset[] | null;
   completed_at: string | null;
 }
 
@@ -375,6 +453,26 @@ export function executeTask(
 ) {
   return api.post<ExecutionStatusResponse>(
     `/api/v1/companies/${companyId}/projects/${projectId}/tasks/${taskId}/execute`
+  );
+}
+
+export function cancelTask(
+  companyId: string,
+  projectId: string,
+  taskId: string
+) {
+  return api.post<TaskResponse>(
+    `/api/v1/companies/${companyId}/projects/${projectId}/tasks/${taskId}/cancel`
+  );
+}
+
+export function restartTask(
+  companyId: string,
+  projectId: string,
+  taskId: string
+) {
+  return api.post<TaskResponse>(
+    `/api/v1/companies/${companyId}/projects/${projectId}/tasks/${taskId}/restart`
   );
 }
 
@@ -413,7 +511,7 @@ export interface TaskVersion {
   task_id: string;
   status: string;
   result_markdown: string | null;
-  result_assets: Record<string, unknown>[] | null;
+  result_assets: ResultAsset[] | null;
   created_at: string;
 }
 
@@ -457,6 +555,102 @@ export function getVersion(
 ) {
   return api.get<TaskVersion>(
     `/api/v1/companies/${companyId}/projects/${projectId}/tasks/${taskId}/versions/${versionNumber}`
+  );
+}
+
+// ── Scene plan types ──
+
+export interface ScenePlanScene {
+  scene_number: number;
+  description: string;
+  duration_seconds: number | null;
+  narration_text: string | null;
+  visual_type: string | null;
+  music_mood: string | null;
+}
+
+export interface ScenePlanResponse {
+  task_id: string;
+  title: string | null;
+  duration_seconds: number | null;
+  scenes: ScenePlanScene[] | null;
+  voice: string | null;
+  music_style: string | null;
+}
+
+// ── Scene plan endpoints ──
+
+export function getScenePlan(
+  companyId: string,
+  projectId: string,
+  taskId: string
+) {
+  return api.get<ScenePlanResponse>(
+    `/api/v1/companies/${companyId}/projects/${projectId}/tasks/${taskId}/scene-plan`
+  );
+}
+
+export function approveScenePlan(
+  companyId: string,
+  projectId: string,
+  taskId: string
+) {
+  return api.post(
+    `/api/v1/companies/${companyId}/projects/${projectId}/tasks/${taskId}/approve-scene-plan`
+  );
+}
+
+export function rejectScenePlan(
+  companyId: string,
+  projectId: string,
+  taskId: string,
+  data: { feedback_text: string }
+) {
+  return api.post(
+    `/api/v1/companies/${companyId}/projects/${projectId}/tasks/${taskId}/reject-scene-plan`,
+    data
+  );
+}
+
+// ── Company integration types ──
+
+export interface CloudinaryStatusResponse {
+  connected: boolean;
+  cloud_name: string | null;
+}
+
+export interface CloudinaryConnectRequest {
+  cloud_name: string;
+  api_key: string;
+  api_secret: string;
+}
+
+export interface IntegrationActionResponse {
+  status: string;
+  message: string;
+}
+
+// ── Company integration endpoints ──
+
+export function getCloudinaryStatus(companyId: string) {
+  return api.get<CloudinaryStatusResponse>(
+    `/api/v1/companies/${companyId}/integrations/cloudinary`
+  );
+}
+
+export function connectCloudinary(
+  companyId: string,
+  data: CloudinaryConnectRequest
+) {
+  return api.post<IntegrationActionResponse>(
+    `/api/v1/companies/${companyId}/integrations/cloudinary`,
+    data
+  );
+}
+
+export function disconnectCloudinary(companyId: string) {
+  return api.delete<IntegrationActionResponse>(
+    `/api/v1/companies/${companyId}/integrations/cloudinary`
   );
 }
 

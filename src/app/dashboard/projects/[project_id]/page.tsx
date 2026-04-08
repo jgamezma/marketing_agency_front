@@ -35,6 +35,7 @@ export default function ProjectDetailPage() {
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [taskError, setTaskError] = useState<string | null>(null);
 
   const hasSquads =
     project?.associated_squads && project.associated_squads.length > 0;
@@ -55,7 +56,10 @@ export default function ProjectDetailPage() {
         const [projectData, types, tasksData] = await Promise.all([
           getProject(companyId, params.project_id),
           getSquadTypes(companyId).catch(() => [] as SquadTypeResponse[]),
-          getTasks(companyId, params.project_id).catch(() => [] as TaskResponse[]),
+          getTasks(companyId, params.project_id).catch((err) => {
+            setTaskError(err instanceof Error ? err.message : "Failed to load tasks");
+            return [] as TaskResponse[];
+          }),
         ]);
         setProject(projectData);
         setSquadTypes(types);
@@ -187,9 +191,11 @@ export default function ProjectDetailPage() {
                 Tasks
               </CardTitle>
               <CardDescription>
-                {tasks.length === 0
-                  ? "No tasks yet. Create one to get started."
-                  : `${tasks.length} task${tasks.length !== 1 ? "s" : ""} in this project`}
+                {taskError
+                  ? taskError
+                  : tasks.length === 0
+                    ? "No tasks yet. Create one to get started."
+                    : `${tasks.length} task${tasks.length !== 1 ? "s" : ""} in this project`}
               </CardDescription>
             </div>
             <CreateTaskDialog
@@ -216,8 +222,8 @@ export default function ProjectDetailPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      {task.squad_name && (
-                        <Badge variant="secondary">{task.squad_name}</Badge>
+                      {task.squad?.name && (
+                        <Badge variant="secondary">{task.squad.name}</Badge>
                       )}
                       <Badge variant="outline">{task.status}</Badge>
                     </div>

@@ -25,11 +25,14 @@ import {
   createTask,
   executeTask,
   suggestSquad,
+  toResultType,
   type AssociatedSquad,
   type TaskResponse,
   type SuggestSquadResponse,
+  type TaskOutputFormat,
 } from "@/lib/api";
-import { Plus, Sparkles, Loader2 } from "lucide-react";
+import { Plus, Sparkles, Loader2, FileDown, ImageIcon, Layers, Video, Clapperboard } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface CreateTaskDialogProps {
   companyId: string;
@@ -48,6 +51,7 @@ export function CreateTaskDialog({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [squadId, setSquadId] = useState<string>("");
+  const [outputFormat, setOutputFormat] = useState<TaskOutputFormat>("pdf");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,6 +64,7 @@ export function CreateTaskDialog({
     setTitle("");
     setDescription("");
     setSquadId("");
+    setOutputFormat("pdf");
     setError(null);
     setSuggestion(null);
     setSuggesting(false);
@@ -97,6 +102,7 @@ export function CreateTaskDialog({
         title: title.trim(),
         description: description.trim() || undefined,
         squad_id: squadId || undefined,
+        result_type: toResultType(outputFormat),
       });
 
       // Execute task immediately after creation
@@ -117,7 +123,7 @@ export function CreateTaskDialog({
     } finally {
       setSaving(false);
     }
-  }, [companyId, projectId, title, description, squadId, onTaskCreated, reset]);
+  }, [companyId, projectId, title, description, squadId, outputFormat, onTaskCreated, reset]);
 
   return (
     <Dialog open={open} onOpenChange={(v) => { setOpen(v); if (!v) reset(); }}>
@@ -159,6 +165,35 @@ export function CreateTaskDialog({
               disabled={saving}
               rows={3}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Result Type</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { value: "pdf", label: "PDF", icon: FileDown },
+                { value: "image", label: "Image", icon: ImageIcon },
+                { value: "image_pipeline", label: "Image Pipeline", icon: Layers },
+                { value: "video", label: "Video", icon: Video },
+                { value: "video_pipeline", label: "Video Pipeline", icon: Clapperboard },
+              ] as const).map(({ value, label, icon: Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setOutputFormat(value)}
+                  disabled={saving}
+                  className={cn(
+                    "flex flex-col items-center gap-1.5 rounded-lg border p-3 text-xs font-medium transition-colors",
+                    outputFormat === value
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "border-border text-muted-foreground hover:border-foreground/20 hover:text-foreground"
+                  )}
+                >
+                  <Icon className="size-4" />
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="space-y-2">
